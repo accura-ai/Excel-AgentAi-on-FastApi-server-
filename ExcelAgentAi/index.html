@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel AI Agent Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans h-screen flex flex-col m-0 p-0">
+
+    <header class="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-md">
+        <div class="flex items-center space-x-3">
+            <span class="text-2xl">📊</span>
+            <h1 class="text-xl font-bold tracking-wide text-green-400">Excel AI Agent</h1>
+        </div>
+        <span class="text-xs bg-gray-700 text-gray-400 px-3 py-1 rounded-full border border-gray-600">Local Environment</span>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <div class="w-1/3 bg-gray-850 p-6 border-r border-gray-850 flex flex-col justify-between bg-gray-800/50">
+            <div class="space-y-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-200 mb-2">1. Wgraj plik Excel</h2>
+                    <p class="text-sm text-gray-400">Wprowadź plik .xlsx lub .xls, na którym ma pracować Twój agent.</p>
+                </div>
+
+                <div id="drop-zone" class="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center hover:border-green-500 transition cursor-pointer bg-gray-800">
+                    <input type="file" id="file-input" accept=".xlsx, .xls" class="hidden">
+                    <span class="text-4xl block mb-3">📁</span>
+                    <p id="upload-status" class="text-sm text-gray-300 font-medium">Kliknij lub przeciągnij plik tutaj</p>
+                    <p class="text-xs text-gray-500 mt-1">Dozwolone formats: .xlsx, .xls</p>
+                </div>
+
+                <div id="file-info-box" class="hidden bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-2 text-xs">
+                    <div class="text-green-400 font-semibold mb-1">✓ Plik wgrany pomyślnie!</div>
+                    <div><span class="text-gray-400">Ścieżka wejściowa:</span> <code id="path-in" class="text-yellow-400 block bg-gray-900 p-1 rounded mt-0.5 overflow-x-auto"></code></div>
+                    <div><span class="text-gray-400">Ścieżka wyjściowa:</span> <code id="path-out" class="text-yellow-400 block bg-gray-900 p-1 rounded mt-0.5 overflow-x-auto"></code></div>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-gray-700">
+                <button id="download-btn" disabled class="w-full bg-gray-700 text-gray-400 font-bold py-3 px-4 rounded-xl cursor-not-allowed transition flex items-center justify-center space-x-2">
+                    <span>📥</span>
+                    <span>Pobierz gotowy plik</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="w-2/3 flex flex-col bg-gray-900">
+            
+            <div id="chat-box" class="flex-1 p-6 overflow-y-auto space-y-4">
+                <div class="flex items-start space-x-3 max-w-3xl">
+                    <div class="bg-green-500 text-white p-2 rounded-lg text-sm shadow">🤖</div>
+                    <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 text-sm leading-relaxed">
+                        Cześć! Jestem Twoim lokalnym asystentem Excel AI. Wgraj swój plik po lewej stronie, a następnie napisz mi tutaj, jakie transformacje mam na nim przeprowadzić!
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 bg-gray-800 border-t border-gray-700">
+                <form id="chat-form" class="flex space-x-3 max-w-4xl mx-auto">
+                    <input type="text" id="chat-input" placeholder="Napisz instrukcję dla Agenta (np. 'Posortuj po ID i dodaj nową kolumnę...')" class="flex-1 bg-gray-950 border border-gray-600 rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500 bg-gray-900" disabled>
+                    <button type="submit" id="send-btn" class="bg-gray-700 text-gray-400 px-6 py-3 rounded-xl font-medium cursor-not-allowed transition" disabled>Wyślij</button>
+                </form>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        
+        // Zmienne przechowujące aktualny stan plików z FastAPI
+        let currentInputPath = null;
+        let currentOutputPath = null;
+
+        // Elementy DOM
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadStatus = document.getElementById('upload-status');
+        const fileInfoBox = document.getElementById('file-info-box');
+        const pathIn = document.getElementById('path-in');
+        const pathOut = document.getElementById('path-out');
+        const chatBox = document.getElementById('chat-box');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const downloadBtn = document.getElementById('download-btn');
+
+        // --- OBSŁUGA WGÓRANIA PLIKU ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        fileInput.addEventListener('change', (e) => {
+            if(e.target.files.length > 0) handleFileUpload(e.target.files[0]);
+        });
+
+        async function handleFileUpload(file) {
+            uploadStatus.innerText = "Wgrywanie pliku...";
+            
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const response = await fetch(`${API_URL}/upload-excel`, {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error("Błąd podczas wgrywania pliku.");
+
+                const data = await response.json();
+                
+                // Zapisujemy ścieżki zwrócone z FastAPI
+                currentInputPath = data.input_file_path;
+                currentOutputPath = data.output_file_path;
+
+                // Aktualizacja UI lewego panelu
+                pathIn.innerText = currentInputPath;
+                pathOut.innerText = currentOutputPath;
+                fileInfoBox.classList.remove('hidden');
+                uploadStatus.innerText = `Wgrano: ${file.name}`;
+                dropZone.classList.add('border-green-500', 'bg-green-950/20');
+
+                // Odblokowanie Chatu
+                chatInput.disabled = false;
+                chatInput.placeholder = "Zadaj pytanie dotyczące wgranego pliku...";
+                sendBtn.disabled = false;
+                sendBtn.classList.replace('bg-gray-700', 'bg-green-600');
+                sendBtn.classList.replace('text-gray-400', 'text-white');
+
+                appendMessage("🤖", "Plik został pomyślnie załadowany do pamięci serwera! Słucham Twoich instrukcji co do modyfikacji.");
+
+            } catch (error) {
+                uploadStatus.innerText = "Błąd wgrywania!";
+                alert(error.message);
+            }
+        }
+
+        // --- OBSŁUGA CZATU ---
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const messageText = chatInput.value.trim();
+            if(!messageText) return;
+
+            // Dodaj wiadomość użytkownika do okna chatu
+            appendMessage("👤", messageText);
+            chatInput.value = "";
+
+            // Blokada wysyłania na czas pracy AI
+            chatInput.disabled = true;
+            sendBtn.disabled = true;
+
+            // Dodaj tymczasowy wskaźnik ładowania bota
+            const loadingId = appendMessage("🤖", "Agent analizuje dane i wykonuje transformację... Proszę czekać ⏳");
+
+            try {
+                // Wysyłamy zapytanie do /chat ze ścieżkami przechwyconymi wcześniej z uploadu
+                const response = await fetch(`${API_URL}/chat`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        message: messageText,
+                        input_file_path: currentInputPath,
+                        output_file_path: currentOutputPath
+                    })
+                });
+
+                if(!response.ok) throw new Error("Błąd serwera podczas przetwarzania przez AI.");
+
+                const data = await response.json();
+                
+                // Usuń wskaźnik ładowania i wstaw prawdziwą odpowiedź
+                document.getElementById(loadingId).remove();
+                appendMessage("🤖", data.response);
+
+                // Po zakończeniu pracy agenta, odblokuj przycisk pobierania pliku wyjściowego
+                enableDownloadButton();
+
+            } catch (error) {
+                document.getElementById(loadingId).remove();
+                appendMessage("🤖", `❌ Wystąpił błąd podczas pracy agenta: ${error.message}`);
+            } finally {
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                chatInput.focus();
+            }
+        });
+
+        // Funkcja dodająca bąbelki wiadomości
+        function appendMessage(sender, text) {
+            const id = "msg-" + Date.now();
+            const isBot = sender === "🤖";
+            const msgHtml = `
+                <div id="${id}" class="flex items-start space-x-3 max-w-3xl animate-fade-in">
+                    <div class="${isBot ? 'bg-green-500' : 'bg-blue-600'} text-white p-2 rounded-lg text-sm shadow">${sender}</div>
+                    <div class="${isBot ? 'bg-gray-800 border-gray-700' : 'bg-gray-750 border-gray-600'} p-4 rounded-xl border text-sm leading-relaxed whitespace-pre-wrap">
+                        ${text}
+                    </div>
+                </div>
+            `;
+            chatBox.insertAdjacentHTML('beforeend', msgHtml);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return id;
+        }
+
+        // Aktywacja przycisku pobierania plików
+        function enableDownloadButton() {
+            if(!currentOutputPath) return;
+            
+            // Wyciągamy samą nazwę pliku z pełnej ścieżki (np. "ready_user_dane.xlsx")
+            const fileName = currentOutputPath.split(/[\\/]/).pop();
+
+            downloadBtn.disabled = false;
+            downloadBtn.classList.replace('bg-gray-700', 'bg-gradient-to-r');
+            downloadBtn.classList.add('from-green-500', 'to-emerald-600', 'hover:from-green-600', 'hover:to-emerald-700', 'text-white', 'shadow-lg');
+            
+            downloadBtn.onclick = () => {
+                window.location.href = `${API_URL}/download/${fileName}`;
+            };
+        }
+    </script>
+</body>
+</html>
