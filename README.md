@@ -86,7 +86,7 @@ ollama pull nomic-embed-text
 ### 5. Clone the repository and start the server
  
 ```bash
-git clone https://github.com/YOUR_USERNAME/ExcelAgentAI.git
+git clone https://github.com/Hop-RegularShowMuscleGuy/ExcelAgentAI.git
 cd ExcelAgentAI
 uvicorn agent_ai:app --reload
 ```
