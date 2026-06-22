@@ -138,4 +138,3 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 ## 📄 License
  
 [MIT](LICENSE)
-index.html is 90% CLAUDE CODE and this README is also created by Claude cuz i'm not aesthetic at all, rest of it is 100% manually coded by me :D
